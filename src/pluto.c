@@ -1848,8 +1848,16 @@ int pluto_auto_transform(PlutoProg *prog)
          * it means it didn't need that many hyperplanes and all of its
          * linearly independent solutions had been found */
         assert(hyp_search_mode == LAZY || num_sols_left == num_ind_sols_req - num_ind_sols_found);
-
-        nsols = find_permutable_hyperplanes(prog, hyp_search_mode,
+		
+		if (options->cgrapar)
+		{
+			if (! options->silent)
+				fprintf(stdout, "[pluto] running parallel strategy for cgra\n");
+			nsols = find_permutable_hyperplanes(prog, hyp_search_mode,
+				num_sols_left, depth);
+		}
+		else
+			nsols = find_permutable_hyperplanes(prog, hyp_search_mode,
                 num_sols_left, depth);
 
         IF_DEBUG(fprintf(stdout, "[pluto] pluto_auto_transform: band level %d; %d hyperplane(s) found\n",

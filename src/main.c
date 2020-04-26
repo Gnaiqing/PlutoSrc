@@ -77,6 +77,7 @@ void usage_message(void)
     fprintf(stdout, "       --multipar                Extract all degrees of parallelism [disabled by default];\n");
     fprintf(stdout, "                                    by default one degree is extracted within any schedule sub-tree (if it exists)\n");
     fprintf(stdout, "       --innerpar                Choose pure inner parallelism over pipelined/wavefront parallelism [disabled by default]\n");
+	fprintf(stdout, "       --cgrapar                 parallel strategy for cgra architecture [disabled by default]\n");
     fprintf(stdout, "\n   Fusion                Options to control fusion heuristic\n");
     fprintf(stdout, "       --nofuse                  Do not fuse across SCCs of data dependence graph\n");
     fprintf(stdout, "       --maxfuse                 Maximal fusion\n");
@@ -162,6 +163,7 @@ int main(int argc, char *argv[])
         {"parallel", no_argument, &options->parallel, 1},
         {"parallelize", no_argument, &options->parallel, 1},
         {"innerpar", no_argument, &options->innerpar, 1},
+		{"cgrapar", no_argument, &options->cgrapar, 1},
         {"iss", no_argument, &options->iss, 1},
         {"unroll", no_argument, &options->unroll, 1},
         {"nounroll", no_argument, &options->unroll, 0},

@@ -2573,6 +2573,7 @@ PlutoOptions *pluto_options_alloc()
     options->scancount = 0;
     options->parallel = 0;
     options->innerpar = 0;
+	options->cgrapar = 0;
     options->identity = 0;
 
     options->lbtile = 0;
