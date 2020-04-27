@@ -83,8 +83,10 @@ PlutoConstraints *pluto_constraints_add_to_each(PlutoConstraints *cst1, const Pl
 void pluto_constraints_simplify(PlutoConstraints *const cst);
 
 int64 *pluto_constraints_lexmin(const PlutoConstraints *,int);
+int64 *pluto_constraints_lexmax(const PlutoConstraints *, int);
 int64 *pluto_constraints_lexmin_isl(const PlutoConstraints *cst, int negvar);
 int64 *pluto_constraints_lexmin_pip(const PlutoConstraints *cst, int negvar);
+int64 *pluto_constraints_lexmax_pip(const PlutoConstraints *cst, int negvar);
 void pluto_constraints_add_inequality(PlutoConstraints *cst);
 void pluto_constraints_add_equality(PlutoConstraints *cst);
 void pluto_constraints_add_constraint(PlutoConstraints *cst, int is_eq);

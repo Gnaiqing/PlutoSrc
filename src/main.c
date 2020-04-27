@@ -342,6 +342,12 @@ warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n"
         options->parallel = 1;
     }
 
+	/*
+	if (options->cgrapar == 1 && options->coeff_bound <= 0) {
+		fprintf(stdout, "Cgra mode require bounds on coefficients, setting coefficients <= 1\n");
+		options->coeff_bound = 1;
+	}
+	*/
 
     /* Extract polyhedral representation */
     PlutoProg *prog = NULL; 

@@ -1143,6 +1143,80 @@ int64 *pluto_constraints_lexmin_pip(const PlutoConstraints *cst, int negvar)
     return sol;
 }
 
+/* Use PIP to solve these constraints (solves for the first element
+ * if it's a list of constraints) */
+int64 *pluto_constraints_lexmax_pip(const PlutoConstraints *cst, int negvar)
+{
+	int bignum, i;
+	PipMatrix  *domain, *context;
+	PipQuast   *solution;
+	PipOptions *pipOptions;
+	PipList *listPtr;
+	int64 *sol;
+	PlutoMatrix *pipmat;
+
+	IF_DEBUG2(printf("[pluto] pluto_constraints_lexmax_pip (%d variables, %d constraints)\n",
+		cst->ncols - 1, cst->nrows););
+
+	pipmat = pluto_matrix_alloc(cst->nrows, cst->ncols + 1);
+
+	/* Convert constraints to PIP format */
+	pluto_constraints_to_pip_matrix(cst, pipmat);
+
+	/* First column says whether it's an inequality and
+	 * the last is for the constant; so we have ncols-2 variables */
+	context = NULL;
+	bignum = -1;
+
+	domain = pip_matrix_populate(pipmat->val, pipmat->nrows,
+		pipmat->ncols);
+
+	pipOptions = pip_options_init();
+
+	if (negvar == 1) {
+		pipOptions->Urs_parms = 1;
+		pipOptions->Urs_unknowns = 1;
+	}
+	
+	/* solve for lexical maximum solution */
+	pipOptions->Maximize = 1;
+
+	/* IF_DEBUG2(fprintf(stdout, "Calling PIP on a %dx%d formulation\n",
+	   pipmat->nrows, pipmat->ncols)); */
+
+	solution = pip_solve(domain, context, bignum, pipOptions);
+
+	// IF_DEBUG2(pip_quast_print(stdout, solution, 0));
+
+	assert(solution->condition == NULL);
+
+	listPtr = solution->list;
+
+	sol = NULL;
+	if (listPtr != NULL) {
+		sol = (int64 *)malloc((pipmat->ncols - 2) * sizeof(int64));
+
+		for (i = 0; i < pipmat->ncols - 2; i++) {
+			/* This is just a lexmin and not a parametrix lexmin and so each
+			 * vector in the list is actually a constant */
+#ifdef PIP_WIDTH_MP
+			sol[i] = mpz_get_si(*listPtr->vector->the_vector);
+#else
+			sol[i] = (int64)*listPtr->vector->the_vector;
+#endif
+			listPtr = listPtr->next;
+		}
+	}
+
+	pip_options_free(pipOptions);
+	pip_matrix_free(domain);
+	pip_quast_free(solution);
+
+	pluto_matrix_free(pipmat);
+
+	return sol;
+}
+
 /* Solve these constraints for lexmin solution */
 int64 *pluto_constraints_lexmin(const PlutoConstraints *cst, int negvar)
 {
@@ -1153,6 +1227,12 @@ int64 *pluto_constraints_lexmin(const PlutoConstraints *cst, int negvar)
     }
 }
 
+/* Solve these constraints for lexmax solution */
+int64 *pluto_constraints_lexmax(const PlutoConstraints *cst, int negvar)
+{
+	/* currently we only support solving constraints with pip */
+	return pluto_constraints_lexmax_pip(cst, negvar);
+}
 
 /* All equalities */
 PlutoConstraints *pluto_constraints_from_equalities(const PlutoMatrix *mat)

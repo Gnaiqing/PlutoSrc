@@ -307,6 +307,18 @@ static PlutoConstraints *get_coeff_bounding_constraints(PlutoProg *prog)
         }
     }
 
+	/* if running under cgra mode, set sum of all transformation coefficients <= 1 to force loop reorder */
+	if (options->cgrapar) {
+		IF_DEBUG2(printf("Adding upper bound sum <= 1 for transformation coefficients\n"););
+		PlutoConstraints * currcst = cst;
+		pluto_constraints_add_inequality(currcst);
+		while (currcst != NULL) {
+			for (i = 0; i < currcst->ncols-npar-1-1; i++)
+				currcst->val[currcst->nrows - 1][npar+1+i] = -1;
+			currcst->val[currcst->nrows - 1][currcst->ncols - 1] = 1;
+			currcst = currcst->next;
+		}
+	}
     return cst;
 }
 
@@ -469,6 +481,128 @@ int64 *pluto_prog_constraints_lexmin(PlutoConstraints *cst, PlutoProg *prog)
     return fsol;
 }
 
+/*
+ * This calls pluto_constraints_lexmax, but before doing that does some preprocessing
+ * - removes variables that we know will be assigned 0 - also do some
+ *   permutation/substitution of variables
+ */
+int64 *pluto_prog_constraints_lexmax(PlutoConstraints *cst, PlutoProg *prog)
+{
+	Stmt **stmts;
+	int nstmts, nvar, npar;
+
+	stmts = prog->stmts;
+	nstmts = prog->nstmts;
+	nvar = prog->nvar;
+	npar = prog->npar;
+
+	/* Remove redundant variables - that don't appear in your outer loops */
+	int redun[npar + 1 + nstmts * (nvar + 1) + 1];
+	int i, j, k, q;
+	int64 *sol, *fsol;
+	PlutoConstraints *newcst;
+
+	assert(cst->ncols - 1 == CST_WIDTH - 1);
+
+	for (i = 0; i < npar + 1; i++) {
+		redun[i] = 0;
+	}
+
+	for (i = 0; i < nstmts; i++) {
+		for (j = 0; j < nvar; j++) {
+			redun[npar + 1 + i * (nvar + 1) + j] = !stmts[i]->is_orig_loop[j];
+		}
+		redun[npar + 1 + i * (nvar + 1) + nvar] = 0;
+	}
+	redun[npar + 1 + nstmts * (nvar + 1)] = 0;
+
+	int del_count = 0;
+	newcst = pluto_constraints_dup(cst);
+	for (j = 0; j < cst->ncols - 1; j++) {
+		if (redun[j]) {
+			pluto_constraints_remove_dim(newcst, j - del_count);
+			del_count++;
+		}
+	}
+	// IF_DEBUG2(printf("Constraints after reductions\n"));
+	// IF_DEBUG2(pluto_constraints_pretty_print(stdout,newcst));
+
+
+	/* Reverse the variable order for stmts */
+	PlutoMatrix *perm_mat = pluto_matrix_alloc(newcst->ncols, newcst->ncols);
+	PlutoMatrix *newcstmat = pluto_matrix_alloc(newcst->nrows, newcst->ncols);
+
+	pluto_matrix_set(perm_mat, 0);
+
+	for (i = 0; i < npar + 1; i++) {
+		perm_mat->val[i][i] = 1;
+	}
+
+	j = npar + 1;
+	for (i = 0; i < nstmts; i++) {
+		for (k = j; k < j + stmts[i]->dim_orig; k++) {
+			perm_mat->val[k][2 * j + stmts[i]->dim_orig - k - 1] = 1;
+		}
+		perm_mat->val[k][k] = 1;
+		j += stmts[i]->dim_orig + 1;
+	}
+	perm_mat->val[j][j] = 1;
+
+	for (i = 0; i < newcst->nrows; i++) {
+		for (j = 0; j < newcst->ncols; j++) {
+			newcstmat->val[i][j] = 0;
+			for (k = 0; k < newcst->ncols; k++) {
+				newcstmat->val[i][j] += newcst->val[i][k] * perm_mat->val[k][j];
+			}
+		}
+	}
+	/* pluto_matrix_print(stdout, newcst->val, newcst->nrows, newcst->ncols); */
+	/* pluto_matrix_print(stdout, newcstmat, newcst->nrows, newcst->ncols); */
+
+	PlutoConstraints *newcst_permuted;
+	newcst_permuted = pluto_constraints_from_mixed_matrix(newcstmat, newcst->is_eq);
+	pluto_matrix_free(newcstmat);
+
+	IF_DEBUG(printf("[pluto] pluto_prog_constraints_lexmax (%d variables, %d constraints)\n",
+		cst->ncols - 1, cst->nrows););
+
+	/* Solve the constraints */
+	sol = pluto_constraints_lexmax(newcst_permuted, DO_NOT_ALLOW_NEGATIVE_COEFF);
+	/* print_polylib_visual_sets("csts", newcst); */
+
+	pluto_constraints_free(newcst_permuted);
+
+	fsol = NULL;
+	if (sol != NULL) {
+
+		PlutoMatrix *actual_sol = pluto_matrix_alloc(1, newcst->ncols - 1);
+		for (j = 0; j < newcst->ncols - 1; j++) {
+			actual_sol->val[0][j] = 0;
+			for (k = 0; k < newcst->ncols - 1; k++) {
+				actual_sol->val[0][j] += sol[k] * perm_mat->val[k][j];
+			}
+		}
+		free(sol);
+
+		fsol = (int64 *)malloc(cst->ncols * sizeof(int64));
+		/* Fill the soln with zeros for the redundant variables */
+		q = 0;
+		for (j = 0; j < cst->ncols - 1; j++) {
+			if (redun[j]) {
+				fsol[j] = 0;
+			}
+			else {
+				fsol[j] = actual_sol->val[0][q++];
+			}
+		}
+		pluto_matrix_free(actual_sol);
+	}
+
+	pluto_matrix_free(perm_mat);
+	pluto_constraints_free(newcst);
+
+	return fsol;
+}
 
 /* Is there an edge between some vertex of SCC1 and some vertex of SCC2? */
 int ddg_sccs_direct_connected(Graph *g, PlutoProg *prog, int scc1, int scc2)
@@ -842,7 +976,12 @@ int find_permutable_hyperplanes(PlutoProg *prog, bool hyp_search_mode,
             pluto_constraints_add(currcst, indcst);
             IF_DEBUG(printf("[pluto] (Band %d) Solving for hyperplane #%d\n", band_depth+1, num_sols_found+1));
             // IF_DEBUG2(pluto_constraints_pretty_print(stdout, currcst));
-            bestsol = pluto_prog_constraints_lexmin(currcst, prog);
+
+			/* cgrapar requires lexmax solution to satisfy dependences at outer level */
+			if (options->cgrapar)
+				bestsol = pluto_prog_constraints_lexmax(currcst, prog);
+			else
+				bestsol = pluto_prog_constraints_lexmin(currcst, prog);
         }
         pluto_constraints_free(indcst);
 
@@ -1818,6 +1957,8 @@ int pluto_auto_transform(PlutoProg *prog)
         }
     }
 
+	if (options->cgrapar && !options->silent)
+		fprintf(stdout, "[pluto] Running parallel strategy for cgra\n");
 
     /* For diamond tiling */
     conc_start_found = 0;
@@ -1851,8 +1992,6 @@ int pluto_auto_transform(PlutoProg *prog)
 		
 		if (options->cgrapar)
 		{
-			if (! options->silent)
-				fprintf(stdout, "[pluto] running parallel strategy for cgra\n");
 			nsols = find_permutable_hyperplanes(prog, hyp_search_mode,
 				num_sols_left, depth);
 		}

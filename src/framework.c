@@ -158,6 +158,17 @@ static void compute_permutability_constraints_dep(Dep *dep, PlutoProg *prog)
         phi->val[2*nvar+npar][npar] = 1;
     }
 
+	/* if running under cgra mode, the bounding function should be
+	 * reversed to u.p+w <= delta(s,t) to find hyperplane with
+	 * long distances first, thus phi should also be reversed
+	 */
+	if (options->cgrapar) {
+		for (k = 0; k < phi->nrows; k++)
+			for (j = 0; j < phi->ncols; j++)
+				phi->val[k][j] = -phi->val[k][j];
+	}
+
+	
     /* Apply Farkas lemma for bounding function constraints */
     bounding_func_cst = farkas_lemma_affine(dep->bounding_poly, phi);
 
